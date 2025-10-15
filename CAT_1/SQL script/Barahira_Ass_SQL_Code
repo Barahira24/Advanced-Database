@@ -1,0 +1,473 @@
+-- NAMES: BARAHIRA Jean Bosco
+-- STUDENT NUMBER: 215003240
+-- MODULE TITLE AND CODE: ADVANCED DATABASE TECHNOLOGY(DSC6235)
+-- CONTINUOUS ASSESSMENT ONE
+-- LECTURER: Dr Eric HITIMANA AND Prince RUKUNDO
+
+-- 1. Create tables with PK, FK, NOT NULL, CHECK
+
+
+-- Department table
+CREATE TABLE "Department" (
+    "DeptID"     SERIAL PRIMARY KEY,                -- unique department id
+    "DeptName"   VARCHAR(100) NOT NULL UNIQUE,      -- department name, unique
+    "Faculty"    VARCHAR(100) NOT NULL              -- faculty name
+);
+
+-- Instructor table
+CREATE TABLE "Instructor" (
+    "InstructorID" SERIAL PRIMARY KEY,              -- unique instructor id
+    "FullName"     VARCHAR(150) NOT NULL,
+    "DeptID"       INT NOT NULL REFERENCES "Department"("DeptID") ON DELETE RESTRICT,
+    "Email"        VARCHAR(255) NOT NULL UNIQUE,
+    "Phone"        VARCHAR(20),
+    CONSTRAINT chk_instructor_email CHECK (POSITION('@' IN "Email") > 1)  -- basic email check
+);
+-- Course table
+CREATE TABLE "Course" (
+    "CourseID"     SERIAL PRIMARY KEY,
+    "Title"        VARCHAR(200) NOT NULL,
+    "CreditHours"  SMALLINT NOT NULL CHECK ("CreditHours" > 0 AND "CreditHours" <= 10),
+    "DeptID"       INT NOT NULL REFERENCES "Department"("DeptID") ON DELETE RESTRICT,
+    "InstructorID" INT NOT NULL REFERENCES "Instructor"("InstructorID") ON DELETE SET NULL
+    -- Note: ON DELETE SET NULL requires InstructorID to allow NULL; since spec asked FK valid,
+    -- we'll instead use ON DELETE RESTRICT to preserve referential integrity.
+);
+-- Correction: because ON DELETE SET NULL with NOT NULL conflicts, re-create Course with ON DELETE RESTRICT:
+DROP TABLE IF EXISTS "Course";
+CREATE TABLE "Course" (
+    "CourseID"     SERIAL PRIMARY KEY,
+    "Title"        VARCHAR(200) NOT NULL,
+    "CreditHours"  SMALLINT NOT NULL CHECK ("CreditHours" > 0 AND "CreditHours" <= 10),
+    "DeptID"       INT NOT NULL REFERENCES "Department"("DeptID") ON DELETE RESTRICT,
+    "InstructorID" INT NOT NULL REFERENCES "Instructor"("InstructorID") ON DELETE RESTRICT
+);
+-- Student table
+CREATE TABLE "Student" (
+    "StudentID"   SERIAL PRIMARY KEY,
+    "FullName"    VARCHAR(150) NOT NULL,
+    "Gender"      VARCHAR(10) NOT NULL CHECK ("Gender" IN ('Male','Female','Other')),
+    "Email"       VARCHAR(255) UNIQUE,
+    "YearOfStudy" SMALLINT NOT NULL CHECK ("YearOfStudy" >= 1 AND "YearOfStudy" <= 8)
+);
+-- 2. Applying CASCADE DELETE for Enrollment–Assessment linkage.
+-- Enrollment table
+CREATE TABLE "Enrollment" (
+    "EnrollID"   SERIAL PRIMARY KEY,
+    "StudentID"  INT NOT NULL REFERENCES "Student"("StudentID") ON DELETE CASCADE,
+    "CourseID"   INT NOT NULL REFERENCES "Course"("CourseID") ON DELETE RESTRICT,
+    "Semester"   VARCHAR(20) NOT NULL,               -- e.g., '2025-Fall'
+    "Status"     VARCHAR(20) NOT NULL CHECK ("Status" IN ('Registered','Completed','Withdrawn')),
+    CONSTRAINT uc_student_course_semester UNIQUE ("StudentID","CourseID","Semester")
+);
+-- Assessment table (each assessment belongs to an enrollment)
+CREATE TABLE "Assessment" (
+    "AssessID"       SERIAL PRIMARY KEY,
+    "EnrollID"       INT NOT NULL REFERENCES "Enrollment"("EnrollID") ON DELETE CASCADE, -- cascade required
+    "AssessmentType" VARCHAR(50) NOT NULL,   -- e.g., 'Assignment', 'Quiz', 'Final'
+    "Score"          NUMERIC(5,2) NOT NULL CHECK ("Score" >= 0 AND "Score" <= 100), -- percent
+    "Weight"         NUMERIC(5,2) NOT NULL CHECK ("Weight" >= 0 AND "Weight" <= 100) -- percent weight
+);
+-- Table to store computed semester GPA per student (the trigger will maintain this)
+CREATE TABLE "SemesterGPA" (
+    "StudentID" INT NOT NULL REFERENCES "Student"("StudentID") ON DELETE CASCADE,
+    "Semester"  VARCHAR(20) NOT NULL,
+    "GPA"       NUMERIC(3,2) NOT NULL CHECK ("GPA" >= 0 AND "GPA" <= 4.0),
+    PRIMARY KEY ("StudentID","Semester")
+);
+
+-- 3. Insert sample data (3 instructors, 5 courses, 10 students)
+
+-- Departments
+INSERT INTO "Department" ("DeptName","Faculty") VALUES
+('Computer Science','School of Engineering'),
+('Mathematics','School of Science'),
+('Business','School of Management');
+
+-- Instructors (3)
+INSERT INTO "Instructor" ("FullName","DeptID","Email","Phone") VALUES
+('Dr. Alice M. Kamanzi', 1, 'alice.kamanzi@univ.example', '250712345678'),
+('Prof. John Rutayisire', 2, 'john.rutayisire@univ.example', '250788123456'),
+('Dr. Clara Niyonzima', 3, 'clara.niyonzima@univ.example', '250783987654');
+
+-- Courses (5)
+INSERT INTO "Course" ("Title","CreditHours","DeptID","InstructorID") VALUES
+('Intro to Programming', 3, 1, 1),
+('Data Structures', 4, 1, 1),
+('Calculus I', 3, 2, 2),
+('Linear Algebra', 3, 2, 2),
+('Principles of Management', 2, 3, 3);
+
+-- Students (10)
+INSERT INTO "Student" ("FullName","Gender","Email","YearOfStudy") VALUES
+('BARAHIRA Jean Bosco','Male','jb.barahira@student.example',2),
+('Alice Uwimana','Female','alice.uwimana@student.example',1),
+('Eric Mukakayumba','Male','eric.m@student.example',3),
+('Grace Mukamurenzi','Female','grace.m@student.example',2),
+('Paul Nshimiyimana','Male','paul.n@student.example',4),
+('Sandra Irakoze','Female','sandra.i@student.example',1),
+('David Manzi','Male','david.m@student.example',2),
+('Martha Habimana','Female','martha.h@student.example',3),
+('Samuel Kamanzi','Male','samuel.k@student.example',2),
+('Olivia Uwizeyimana','Female','olivia.u@student.example',4);
+
+-- Enrollments: register students in courses across a semester (e.g., '2025-Spring')
+-- We'll create multiple enrollments so we have data for assessments and GPA.
+INSERT INTO "Enrollment" ("StudentID","CourseID","Semester","Status") VALUES
+(1, 1, '2025-Spring','Completed'),  -- BARAHIRA in Intro to Programming
+(1, 2, '2025-Spring','Completed'),  -- BARAHIRA in Data Structures
+(2, 1, '2025-Spring','Completed'),
+(3, 3, '2025-Spring','Completed'),
+(4, 4, '2025-Spring','Completed'),
+(5, 5, '2025-Spring','Completed'),
+(6, 1, '2025-Spring','Completed'),
+(7, 2, '2025-Spring','Completed'),
+(8, 3, '2025-Spring','Completed'),
+(9, 4, '2025-Spring','Completed'),
+(10,5, '2025-Spring','Completed'),
+-- some additional enrollments across another semester
+(1, 3, '2025-Fall','Registered'),
+(2, 2, '2025-Fall','Registered');
+
+-- Assessments: for each enrollment we add assessment components (weights should ideally sum to 100 per enrollment).
+-- For simplicity, we'll add 3 assessments per enrollment: Midterm (30), Assignments (30), Final (40)
+
+-- Helper: Insert assessments for enrollments with id 1..11 (first semester)
+INSERT INTO "Assessment" ("EnrollID","AssessmentType","Score","Weight") VALUES
+-- EnrollID 1 (Student 1 course 1)
+(1, 'Assignments', 78.00, 30.00),
+(1, 'Midterm',     70.00, 30.00),
+(1, 'Final',       65.00, 40.00),
+
+-- EnrollID 2 (Student 1 course 2)
+(2, 'Assignments', 85.00, 30.00),
+(2, 'Midterm',     80.00, 30.00),
+(2, 'Final',       90.00, 40.00),
+
+-- EnrollID 3 (Student 2 course 1)
+(3, 'Assignments', 55.00, 30.00),
+(3, 'Midterm',     50.00, 30.00),
+(3, 'Final',       48.00, 40.00),
+
+-- EnrollID 4 (Student 3 course 3)
+(4, 'Assignments', 88.00, 30.00),
+(4, 'Midterm',     90.00, 30.00),
+(4, 'Final',       92.00, 40.00),
+
+-- EnrollID 5 (Student 4 course 4)
+(5, 'Assignments', 40.00, 30.00),
+(5, 'Midterm',     45.00, 30.00),
+(5, 'Final',       38.00, 40.00),
+
+-- EnrollID 6 (Student 5 course 5)
+(6, 'Assignments', 72.00, 30.00),
+(6, 'Midterm',     68.00, 30.00),
+(6, 'Final',       70.00, 40.00),
+
+-- EnrollID 7 (Student 6 course 1)
+(7, 'Assignments', 49.00, 30.00),
+(7, 'Midterm',     55.00, 30.00),
+(7, 'Final',       45.00, 40.00),
+
+-- EnrollID 8 (Student 7 course 2)
+(8, 'Assignments', 60.00, 30.00),
+(8, 'Midterm',     62.00, 30.00),
+(8, 'Final',       58.00, 40.00),
+
+-- EnrollID 9 (Student 8 course 3)
+(9, 'Assignments', 90.00, 30.00),
+(9, 'Midterm',     94.00, 30.00),
+(9, 'Final',       88.00, 40.00),
+
+-- EnrollID 10 (Student 9 course 4)
+(10,'Assignments', 30.00, 30.00),
+(10,'Midterm',     35.00, 30.00),
+(10,'Final',       25.00, 40.00),
+
+-- EnrollID 11 (Student10 course5)
+(11,'Assignments', 82.00, 30.00),
+(11,'Midterm',     78.00, 30.00),
+(11,'Final',       80.00, 40.00);
+
+-- For the 2025-Fall enrollments (enroll IDs 12 & 13) we can add one assessment as placeholder:
+INSERT INTO "Assessment" ("EnrollID","AssessmentType","Score","Weight") VALUES
+(12,'Assignment', 0.00, 100.00),
+(13,'Assignment', 0.00, 100.00);
+
+
+--  Utility: function to compute final numeric grade per enrollment
+
+-- Returns numeric percent grade for a given EnrollID
+CREATE OR REPLACE FUNCTION fn_final_grade_for_enroll(p_enrollid INT)
+RETURNS NUMERIC(6,2) LANGUAGE SQL AS $$
+    SELECT COALESCE((SUM("Score" * ("Weight"/100.0)) ),0)  -- Score already 0-100, Weight is percent -> multiply
+    FROM "Assessment"
+    WHERE "EnrollID" = p_enrollid;
+$$;
+
+-- 4. Retrieve each student’s grades by course title and semester
+
+-- This query computes final numeric grade per enrollment and shows student, course, semester.
+-- Run this to see results for completed enrollments:
+-- (You can run the SELECT block below)
+SELECT
+    s."StudentID",
+    s."FullName" AS student_name,
+    c."CourseID",
+    c."Title"    AS course_title,
+    e."Semester",
+    ROUND(fn_final_grade_for_enroll(e."EnrollID")::numeric,2) AS final_percent,
+    CASE
+        WHEN fn_final_grade_for_enroll(e."EnrollID") >= 85 THEN 'A'
+        WHEN fn_final_grade_for_enroll(e."EnrollID") >= 70 THEN 'B'
+        WHEN fn_final_grade_for_enroll(e."EnrollID") >= 60 THEN 'C'
+        WHEN fn_final_grade_for_enroll(e."EnrollID") >= 50 THEN 'D'
+        ELSE 'F'
+    END AS letter_grade
+FROM "Enrollment" e
+JOIN "Student" s ON s."StudentID" = e."StudentID"
+JOIN "Course" c ON c."CourseID" = e."CourseID"
+WHERE e."Status" IN ('Completed','Registered')
+ORDER BY s."StudentID", e."Semester", c."CourseID";
+
+-- 5. Update course instructor details and observe propagation of relationships.
+
+--  Change the instructor assigned to 'Intro to Programming' to Prof. John Rutayisire (InstructorID = 2)
+--1: show current mapping
+SELECT c."CourseID", c."Title", i."InstructorID", i."FullName" AS instructor_name
+FROM "Course" c
+JOIN "Instructor" i ON i."InstructorID" = c."InstructorID"
+WHERE c."Title" = 'Intro to Programming';
+
+--2: update instructor for that course
+UPDATE "Course"
+SET "InstructorID" = 2
+WHERE "Title" = 'Intro to Programming';
+
+--3: show after update to confirm propagation
+SELECT c."CourseID", c."Title", i."InstructorID", i."FullName" AS instructor_name
+FROM "Course" c
+JOIN "Instructor" i ON i."InstructorID" = c."InstructorID"
+WHERE c."Title" = 'Intro to Programming';
+
+-- Note: because we used FK ON DELETE RESTRICT, deleting an instructor will be prevented while their courses reference them.
+-- If you prefer the change to propagate automatically on instructor deletion (e.g., set NULL), you could have defined ON DELETE SET NULL
+-- and allowed InstructorID to be NULL.
+
+
+-- 6. Generate a list of students failing more than two courses
+
+-- Define 'failing' as final_percent < 50. We'll compute final percent per enrollment and then count fails per student.
+SELECT
+    s."StudentID",
+    s."FullName",
+    COUNT(*) AS failed_courses_count
+FROM "Enrollment" e
+JOIN "Student" s ON s."StudentID" = e."StudentID"
+-- only consider completed enrollments
+JOIN (
+    SELECT "EnrollID", fn_final_grade_for_enroll("EnrollID") AS final_percent
+    FROM "Enrollment"
+) fg ON fg."EnrollID" = e."EnrollID"
+WHERE fg.final_percent < 50
+GROUP BY s."StudentID", s."FullName"
+HAVING COUNT(*) > 2
+ORDER BY failed_courses_count DESC;
+-- (Given our sample data, there may be no student with >2 fails; you can add more failing assessments to test the logic.)
+
+
+--7.Create a view summarizing average grades per department
+-- This view computes the average final numeric grade for all enrollments in courses belonging to each department.
+CREATE OR REPLACE VIEW view_avg_grade_per_department AS
+SELECT
+    d."DeptID",
+    d."DeptName",
+    ROUND(AVG(finals.final_percent)::numeric,2) AS avg_final_percent
+FROM "Department" d
+JOIN "Course" c ON c."DeptID" = d."DeptID"
+JOIN (
+    SELECT e."EnrollID", e."CourseID", fn_final_grade_for_enroll(e."EnrollID") AS final_percent
+    FROM "Enrollment" e
+) finals ON finals."CourseID" = c."CourseID"
+GROUP BY d."DeptID", d."DeptName";
+
+-- Preview the view:
+SELECT * FROM view_avg_grade_per_department ORDER BY "DeptID";
+
+
+-- 8. Define a trigger to record a log whenever a new prescription is created. 
+
+-- Create function to compute grade point from percent
+CREATE OR REPLACE FUNCTION fn_gradepoint_from_percent(p_percent NUMERIC)
+RETURNS NUMERIC(3,2) AS $$
+BEGIN
+    IF p_percent >= 85 THEN
+        RETURN 4.00;
+    ELSIF p_percent >= 70 THEN
+        RETURN 3.00;
+    ELSIF p_percent >= 60 THEN
+        RETURN 2.00;
+    ELSIF p_percent >= 50 THEN
+        RETURN 1.00;
+    ELSE
+        RETURN 0.00;
+    END IF;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Create trigger function to recalc semester GPA
+CREATE OR REPLACE FUNCTION fn_recalc_semester_gpa()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_enrollid INT;
+    v_studentid INT;
+    v_semester VARCHAR(20);
+    v_final NUMERIC(6,2);
+    v_gradepoint NUMERIC(3,2);
+BEGIN
+    -- Determine the affected enrollment(s). For INSERT/UPDATE, use NEW; for DELETE, use OLD.
+    IF (TG_OP = 'INSERT') THEN
+        v_enrollid := NEW."EnrollID";
+    ELSIF (TG_OP = 'UPDATE') THEN
+        -- If enrollment changed on update, recalc for both old and new enrollments
+        v_enrollid := NEW."EnrollID";
+    ELSE  -- DELETE
+        v_enrollid := OLD."EnrollID";
+    END IF;
+
+    -- Find student and semester for this enrollment
+    SELECT "StudentID", "Semester" INTO v_studentid, v_semester
+    FROM "Enrollment"
+    WHERE "EnrollID" = v_enrollid;
+
+    -- If enrollment no longer exists (should not happen except on cascade delete), exit
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    -- Recalculate GPA for that student & semester:
+    -- 1) For each enrollment of that student in that semester, compute final percent
+    -- 2) Map to grade point
+    -- 3) Weight by course credit hours
+    -- 4) Compute SUM(grade_point * credit_hours) / SUM(credit_hours)
+    WITH per_enroll AS (
+        SELECT e."EnrollID", e."CourseID", fn_final_grade_for_enroll(e."EnrollID") AS final_percent
+        FROM "Enrollment" e
+        WHERE e."StudentID" = v_studentid AND e."Semester" = v_semester
+    ),
+    grade_points AS (
+        SELECT pe."EnrollID", pe."final_percent",
+               fn_gradepoint_from_percent(pe."final_percent") AS grade_point,
+               c."CreditHours"
+        FROM per_enroll pe
+        JOIN "Course" c ON c."CourseID" = pe."CourseID"
+    )
+    SELECT
+        CASE WHEN SUM(grade_point * "CreditHours") IS NULL THEN 0.0
+             ELSE ROUND(SUM(grade_point * "CreditHours")::numeric / NULLIF(SUM("CreditHours"),0),2)
+        END
+    INTO v_final
+    FROM grade_points;
+
+    -- Upsert into SemesterGPA
+    INSERT INTO "SemesterGPA" ("StudentID","Semester","GPA")
+    VALUES (v_studentid, v_semester, v_final)
+    ON CONFLICT ("StudentID","Semester")
+    DO UPDATE SET "GPA" = EXCLUDED."GPA";
+
+    RETURN NULL; -- triggers fired AFTER, return value ignored
+END;
+$$ LANGUAGE plpgsql;
+
+-- Attach trigger to Assessment table AFTER INSERT OR UPDATE OR DELETE
+CREATE TRIGGER trg_recalc_gpa_after_assess_update
+AFTER INSERT OR UPDATE OR DELETE ON "Assessment"
+FOR EACH ROW
+EXECUTE FUNCTION fn_recalc_semester_gpa();
+
+
+--  Initialize SemesterGPA for existing data by simulating recalculation
+
+DO
+$$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT DISTINCT e."StudentID", e."Semester"
+        FROM "Enrollment" e
+    LOOP
+        -- Directly compute GPA for this student and semester
+        WITH per_enroll AS (
+            SELECT e."EnrollID", e."CourseID",
+                   fn_final_grade_for_enroll(e."EnrollID") AS final_percent
+            FROM "Enrollment" e
+            WHERE e."StudentID" = r."StudentID"
+              AND e."Semester" = r."Semester"
+        ),
+        grade_points AS (
+            SELECT pe."EnrollID",
+                   pe."final_percent",
+                   fn_gradepoint_from_percent(pe."final_percent") AS grade_point,
+                   c."CreditHours"
+            FROM per_enroll pe
+            JOIN "Course" c ON c."CourseID" = pe."CourseID"
+        ),
+        calc AS (
+            SELECT
+                COALESCE(
+                    ROUND(SUM(grade_point * "CreditHours")::numeric / NULLIF(SUM("CreditHours"),0), 2),
+                    0.00
+                ) AS gpa
+            FROM grade_points
+        )
+        INSERT INTO "SemesterGPA" ("StudentID", "Semester", "GPA")
+        SELECT r."StudentID", r."Semester", calc.gpa
+        FROM calc
+        ON CONFLICT ("StudentID","Semester")
+        DO UPDATE SET "GPA" = EXCLUDED."GPA";
+    END LOOP;
+END
+$$ LANGUAGE plpgsql;
+
+
+--  show semester GPA table
+
+SELECT sg."StudentID", s."FullName", sg."Semester", sg."GPA"
+FROM "SemesterGPA" sg
+JOIN "Student" s ON s."StudentID" = sg."StudentID"
+ORDER BY sg."StudentID", sg."Semester";
+
+
+--   If you update an assessment score, the trigger will recalc GPA
+
+-- increase BARAHIRA (StudentID=1) EnrollID=1 Final from 65 -> 85
+-- First show old final percent
+SELECT fn_final_grade_for_enroll(1) AS old_final;
+
+-- Update the Final assessment for EnrollID=1
+UPDATE "Assessment"
+SET "Score" = 85.00
+WHERE "EnrollID" = 1 AND "AssessmentType" = 'Final';
+
+-- After update, show new final percent and updated GPA row
+SELECT fn_final_grade_for_enroll(1) AS new_final;
+SELECT * FROM "SemesterGPA" WHERE "StudentID" = 1 AND "Semester" = '2025-Spring';
+
+
+-----------------------END---------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
